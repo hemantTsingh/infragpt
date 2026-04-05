@@ -1,11 +1,10 @@
+import os
 import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
 
 DB_PATH = Path(os.environ.get("AUDIT_DB_PATH", "/tmp/infragpt_audit.db"))
-
-import os
 
 _local = threading.local()
 
