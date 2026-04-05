@@ -26,6 +26,11 @@ spec:
                 secretKeyRef:
                   name: infragpt-secrets
                   key: ANTHROPIC_API_KEY
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: DATABASE_URL
           resources:
             requests:
               cpu: "100m"

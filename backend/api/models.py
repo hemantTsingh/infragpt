@@ -81,3 +81,17 @@ class AnomalyResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str
+
+
+class AuditEntry(BaseModel):
+    id: int
+    timestamp: str
+    action: str
+    resource: str
+    decision: str
+    confidence: float
+
+
+class AuditResponse(BaseModel):
+    entries: list[AuditEntry]
+    total: int

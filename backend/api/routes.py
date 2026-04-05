@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
+from typing import Optional
+
 from ai.anomaly_classifier import classify_anomalies
 from ai.log_explainer import ask_claude, explain_logs
 from ai.remediation import suggest_remediation
@@ -8,6 +10,8 @@ from api.models import (
     AnomalyResponse,
     AskRequest,
     AskResponse,
+    AuditEntry,
+    AuditResponse,
     ExplainRequest,
     ExplainResponse,
     HealthResponse,
@@ -17,6 +21,7 @@ from api.models import (
     StatusRequest,
     StatusResponse,
 )
+from db.audit_log import get_decisions_by_resource, get_recent_decisions
 from integrations.k8s_client import get_pod_logs as k8s_get_pod_logs, get_pods
 from integrations.loki_client import get_pod_logs
 
@@ -113,6 +118,30 @@ async def remediate(req: RemediationRequest):
     logs = get_pods(req.namespace)
     result = await suggest_remediation(req.namespace, req.pod, req.issue, logs)
     return RemediationResponse(**result)
+
+
+@router.get("/api/audit", response_model=AuditResponse)
+async def audit(
+    namespace: Optional[str] = None,
+    pod: Optional[str] = None,
+    action: Optional[str] = None,
+    limit: int = 50,
+):
+    """Query the persistent audit log stored in PostgreSQL."""
+    if namespace and pod:
+        entries = get_decisions_by_resource(f"{namespace}/{pod}", limit=limit)
+    elif namespace:
+        entries = get_decisions_by_resource(namespace, limit=limit)
+    else:
+        entries = get_recent_decisions(limit=limit)
+
+    if action:
+        entries = [e for e in entries if e["action"] == action]
+
+    return AuditResponse(
+        entries=[AuditEntry(**e) for e in entries],
+        total=len(entries),
+    )
 
 
 @router.post("/api/anomalies", response_model=AnomalyResponse)
