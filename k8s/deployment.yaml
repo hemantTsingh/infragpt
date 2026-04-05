@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: infragpt
+  namespace: default
+  labels:
+    app: infragpt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: infragpt
+  template:
+    metadata:
+      labels:
+        app: infragpt
+    spec:
+      containers:
+        - name: infragpt
+          image: hemantsingh1023/infragpt:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: infragpt-secrets
+                optional: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /docs
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: infragpt
+  namespace: default
+spec:
+  selector:
+    app: infragpt
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: NodePort
