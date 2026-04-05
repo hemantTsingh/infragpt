@@ -20,10 +20,12 @@ spec:
           image: hemantsingh1023/infragpt:latest
           ports:
             - containerPort: 8000
-          envFrom:
-            - secretRef:
-                name: infragpt-secrets
-                optional: true
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: infragpt-secrets
+                  key: ANTHROPIC_API_KEY
           resources:
             requests:
               cpu: "100m"

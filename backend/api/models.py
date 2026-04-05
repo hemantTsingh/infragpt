@@ -3,17 +3,20 @@ from typing import Optional
 
 
 class ExplainRequest(BaseModel):
+    pod_name: str
     namespace: str
-    pod: str
-    tail_lines: int = Field(default=200, ge=10, le=2000)
+    lines: int = Field(default=100, ge=10, le=2000)
 
 
 class ExplainResponse(BaseModel):
-    pod: str
-    explanation: str
+    pod_name: str
+    namespace: str
+    audit_id: int
     severity: str
-    model: str
-    tokens_used: int
+    summary: str
+    top_causes: list[str]
+    suggested_action: str
+    log_lines_analyzed: int
 
 
 class AskRequest(BaseModel):

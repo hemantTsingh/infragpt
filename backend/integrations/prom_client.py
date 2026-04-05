@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 import httpx
@@ -5,6 +6,51 @@ import httpx
 PROMETHEUS_URL = (
     "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
 )
+
+logger = logging.getLogger(__name__)
+
+
+async def _query(promql: str) -> dict:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{PROMETHEUS_URL}/api/v1/query",
+            params={"query": promql},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+async def get_pod_cpu_usage(pod_name: str, namespace: str) -> float:
+    """Return CPU usage in cores. Returns -1.0 on error."""
+    try:
+        result = await _query(
+            f'rate(container_cpu_usage_seconds_total{{'
+            f'namespace="{namespace}",pod=~"{pod_name}.*",container!=""}}[5m])'
+        )
+        results = result.get("data", {}).get("result", [])
+        if results:
+            return float(results[0]["value"][1])
+        return -1.0
+    except Exception as exc:
+        logger.warning("Prometheus CPU query failed for %s/%s: %s", namespace, pod_name, exc)
+        return -1.0
+
+
+async def get_pod_memory_usage(pod_name: str, namespace: str) -> float:
+    """Return memory usage in MB. Returns -1.0 on error."""
+    try:
+        result = await _query(
+            f'sum(container_memory_working_set_bytes{{'
+            f'namespace="{namespace}",pod=~"{pod_name}.*",container!=""}}) by (pod)'
+        )
+        results = result.get("data", {}).get("result", [])
+        if results:
+            return float(results[0]["value"][1]) / (1024 * 1024)
+        return -1.0
+    except Exception as exc:
+        logger.warning("Prometheus memory query failed for %s/%s: %s", namespace, pod_name, exc)
+        return -1.0
 
 
 async def query(promql: str) -> dict:
@@ -58,7 +104,6 @@ async def get_cluster_metrics() -> dict:
     mem_result = await query(
         'sum(container_memory_working_set_bytes{container!=""}) by (namespace)'
     )
-
     cpu_by_ns = {
         item["metric"].get("namespace", "unknown"): float(item["value"][1])
         for item in cpu_result.get("data", {}).get("result", [])
@@ -67,7 +112,6 @@ async def get_cluster_metrics() -> dict:
         item["metric"].get("namespace", "unknown"): float(item["value"][1])
         for item in mem_result.get("data", {}).get("result", [])
     }
-
     return {"cpu_by_namespace": cpu_by_ns, "memory_by_namespace": mem_by_ns}
 
 

@@ -40,26 +40,52 @@ def test_status_endpoint(client):
 
 
 def test_explain_endpoint(client):
-    mock_result = {
-        "pod": "default/my-pod",
-        "explanation": "The pod crashed due to OOM.",
+    mock_loki_lines = [
+        "ERROR: OOMKilled container exceeded memory limit",
+        "FATAL: cannot allocate memory",
+    ]
+    mock_explain_result = {
         "severity": "critical",
-        "model": "claude-opus-4-6",
-        "tokens_used": 150,
+        "summary": "The pod was OOMKilled.",
+        "top_causes": ["Memory limit exceeded"],
+        "suggested_action": "kubectl describe pod my-pod -n default",
+        "audit_id": 1,
     }
-    with patch("api.routes.get_pod_logs", return_value="some log content"), \
-         patch("api.routes.explain_logs", new_callable=AsyncMock, return_value=mock_result):
-        response = client.post("/api/explain", json={"namespace": "default", "pod": "my-pod"})
+    with patch("api.routes.get_pod_logs", new_callable=AsyncMock, return_value=mock_loki_lines), \
+         patch("api.routes.explain_logs", new_callable=AsyncMock, return_value=mock_explain_result):
+        response = client.post(
+            "/api/explain",
+            json={"pod_name": "my-pod", "namespace": "default", "lines": 50},
+        )
     assert response.status_code == 200
     data = response.json()
     assert data["severity"] == "critical"
-    assert data["pod"] == "default/my-pod"
+    assert data["pod_name"] == "my-pod"
+    assert data["namespace"] == "default"
+    assert data["log_lines_analyzed"] == 2
+    assert "audit_id" in data
 
 
-def test_explain_pod_not_found(client):
-    with patch("api.routes.get_pod_logs", return_value="Error fetching logs: Not Found"):
-        response = client.post("/api/explain", json={"namespace": "default", "pod": "missing-pod"})
-    assert response.status_code == 404
+def test_explain_endpoint_loki_empty_uses_kubectl(client):
+    """When Loki returns empty, the route falls back to kubectl logs."""
+    mock_explain_result = {
+        "severity": "info",
+        "summary": "No issues found.",
+        "top_causes": [],
+        "suggested_action": "none",
+        "audit_id": 2,
+    }
+    with patch("api.routes.get_pod_logs", new_callable=AsyncMock, return_value=[]), \
+         patch("api.routes.explain_logs", new_callable=AsyncMock, return_value=mock_explain_result), \
+         patch("api.routes.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="log line 1\nlog line 2\n")
+        response = client.post(
+            "/api/explain",
+            json={"pod_name": "my-pod", "namespace": "default"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["log_lines_analyzed"] == 2
 
 
 def test_ask_endpoint(client):
@@ -98,12 +124,15 @@ def test_remediate_endpoint(client):
     mock_result = {
         "pod": "default/broken-pod",
         "issue": "CrashLoopBackOff",
-        "suggested_commands": ["kubectl describe pod broken-pod -n default", "kubectl rollout restart deployment/broken -n default"],
+        "suggested_commands": [
+            "kubectl describe pod broken-pod -n default",
+            "kubectl rollout restart deployment/broken -n default",
+        ],
         "explanation": "The pod is crashing due to a misconfiguration.",
         "risk_score": 0.2,
         "risk_label": "low",
     }
-    with patch("api.routes.get_pod_logs", return_value="crash loop detected"), \
+    with patch("api.routes.get_pods", return_value=[]), \
          patch("api.routes.suggest_remediation", new_callable=AsyncMock, return_value=mock_result):
         response = client.post(
             "/api/remediate",
