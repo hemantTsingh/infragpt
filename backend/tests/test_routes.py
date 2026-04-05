@@ -66,8 +66,8 @@ def test_explain_endpoint(client):
     assert "audit_id" in data
 
 
-def test_explain_endpoint_loki_empty_uses_kubectl(client):
-    """When Loki returns empty, the route falls back to kubectl logs."""
+def test_explain_endpoint_loki_empty_uses_k8s_client(client):
+    """When Loki returns empty, the route falls back to the k8s Python client."""
     mock_explain_result = {
         "severity": "info",
         "summary": "No issues found.",
@@ -77,8 +77,7 @@ def test_explain_endpoint_loki_empty_uses_kubectl(client):
     }
     with patch("api.routes.get_pod_logs", new_callable=AsyncMock, return_value=[]), \
          patch("api.routes.explain_logs", new_callable=AsyncMock, return_value=mock_explain_result), \
-         patch("api.routes.subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=0, stdout="log line 1\nlog line 2\n")
+         patch("api.routes.k8s_get_pod_logs", return_value="log line 1\nlog line 2\n"):
         response = client.post(
             "/api/explain",
             json={"pod_name": "my-pod", "namespace": "default"},

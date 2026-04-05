@@ -4,7 +4,7 @@ from typing import Optional
 
 import httpx
 
-LOKI_URL = "http://loki.monitoring.svc.cluster.local:3100"
+LOKI_URL = "http://loki-stack.monitoring.svc.cluster.local:3100"
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,3 @@
-import subprocess
-
 from fastapi import APIRouter, HTTPException
 
 from ai.anomaly_classifier import classify_anomalies
@@ -19,7 +17,7 @@ from api.models import (
     StatusRequest,
     StatusResponse,
 )
-from integrations.k8s_client import get_pods
+from integrations.k8s_client import get_pod_logs as k8s_get_pod_logs, get_pods
 from integrations.loki_client import get_pod_logs
 
 router = APIRouter()
@@ -35,22 +33,12 @@ async def explain(req: ExplainRequest):
     # Primary: fetch from Loki
     log_lines = await get_pod_logs(req.pod_name, req.namespace, req.lines)
 
-    # Fallback: kubectl logs if Loki returned nothing
+    # Fallback: k8s Python client if Loki returned nothing
     if not log_lines:
         try:
-            proc = subprocess.run(
-                [
-                    "kubectl", "logs",
-                    f"--namespace={req.namespace}",
-                    f"--tail={req.lines}",
-                    req.pod_name,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            if proc.returncode == 0 and proc.stdout.strip():
-                log_lines = proc.stdout.strip().splitlines()
+            raw = k8s_get_pod_logs(req.namespace, req.pod_name, tail_lines=req.lines)
+            if raw and not raw.startswith("Error fetching logs:"):
+                log_lines = [l for l in raw.splitlines() if l.strip()]
         except Exception:
             pass
 
